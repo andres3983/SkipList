@@ -35,7 +35,7 @@ class Node:
 
 
 class AuthSkipList:
-    def __init__(self, max_level=5):
+    def __init__(self, max_level=8):
         self.max_level = max_level
         self.level_heads = [Node(l) for l in range(max_level + 1)]
         for l in range(max_level, 0, -1):
@@ -189,12 +189,14 @@ class AuthSkipList:
 
 def verify_chain(root_hash, leaf_val, proof):
     if not proof: return False, 0
+    gammas = []
     total_bytes = 0
     first = proof[0]
-    if first['level'] != 0: return False, 0
-    if not first.get('leaf'): return False, 0
+    if first['level'] != 0: return False, 0, gammas
+    if not first.get('leaf'): return False, 0, gammas
     if leaf_val and first['leaf'].lower() != leaf_val.lower():
-        return False, 0
+        return False, 0, gammas
+
 
     for entry in proof:
         lvl = entry['level']
@@ -212,12 +214,17 @@ def verify_chain(root_hash, leaf_val, proof):
                    canonical_bytes(rank) +
                    canonical_bytes(down_bytes) +
                    canonical_bytes(right_bytes))
-        computed = sha256(ser)
-        total_bytes += len(ser)
-        if computed != bytes.fromhex(entry['label']):
-            return False, total_bytes
 
-    return (bytes.fromhex(proof[-1]['label']) == root_hash), total_bytes
+        computed = sha256(ser)
+        gammas.append(computed.hex())
+        total_bytes += len(ser)
+
+        if computed != bytes.fromhex(entry['label']):
+            print("Gamma mismatch ", lvl)
+            return False, total_bytes, gammas
+
+    ok = (bytes.fromhex(proof[-1]['label']) == root_hash)
+    return ok, total_bytes, gammas
 
 
 # Demo
@@ -232,12 +239,14 @@ if __name__ == "__main__":
     print("Root hash:", root.hex())
 
     total_bytes = 0
-    total_proof_time = 0.0 
-    total_verify_time = 0.0 
+    total_gamma_storage = 0
+    total_proof_time = 0.0
+    total_verify_time = 0.0
     total = 0
-    
+    n = len(vals)
+
     for i in range(1, len(vals)+1):
-      #comp time 
+      #comp time
       t0 = time.perf_counter()
       leaf_val, proof = asl.get_proof_chain(i)
       t1 = time.perf_counter()
@@ -245,14 +254,21 @@ if __name__ == "__main__":
 
       #verification time
       t2 = time.perf_counter()
-      ok, nbytes = verify_chain(root, leaf_val, proof)
+      ok, nbytes, gammas = verify_chain(root, leaf_val, proof)
       t3 = time.perf_counter()
       total_verify_time += (t3 - t2)
 
-      total_bytes += nbytes 
+      total_bytes += nbytes
 
-      print(f"{i:2d}: ok = {ok}, proof_bytes={nbytes}")
+      gamma_storage = sum(len(bytes.fromhex(g)) for g in gammas)
+      total_gamma_storage += gamma_storage
 
+      print("Gamma values: ", [g[:10] + "..." for g in gammas])
+      print(f"{i:2d}: ok = {ok}, proof_bytes={nbytes}, gamma_storage={gamma_storage}")
+
+
+    print("\n=== Summary ===")
     print("Avg proof bytes:", total_bytes/len(vals))
+    print("Avg gamma storage: ", total_gamma_storage / n)
     print("Avg proof computation time: %.6f sec" % (total_proof_time / n))
     print("Avg proof verification time: %.6f sec" % (total_verify_time / n))
