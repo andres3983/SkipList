@@ -1,4 +1,4 @@
-import hashlib, math, random, struct, time, pandas as pd
+import hashlib, tracemalloc, os, math, psutil, random, struct, time, pandas as pd
 
 def canonical_bytes(arg):
     """serialize arg in a canonical way so hashes are consistent"""
@@ -164,7 +164,7 @@ class AuthSkipList:
       if chain[-1] is not self.head:
         chain.append(self.head)
 
- 
+
       proof = []
       for v in chain:
         entry = {
@@ -229,40 +229,37 @@ def verify_chain(root_hash, leaf_val, proof):
 # Demo
 if __name__ == "__main__":
     random.seed(1)
-
-    sample_sizes = [2**i for i in range(10, 61, 10)]  # 2^10, 2^20, 2^30, 2^40, 2^50, 2^60
+    sample_sizes = [2**i for i in range(10, 61, 10)]
     results = []
 
     for n in sample_sizes:
         print(f"\n=== Simulating n = 2^{int(math.log2(n))} ({n:.2e}) elements ===")
 
-        # We’ll only actually insert a small subset of elements to keep it manageable
-        sample_count = min(1000, n)  # limit to 1000 actual nodes
-        asl = AuthSkipList(max_level=min(20, int(math.log2(sample_count))))
+        sample_count = min(1000, n)
 
+        tracemalloc.start()
+        asl = AuthSkipList(max_level=min(20, int(math.log2(sample_count))))
         vals = sorted(random.sample(range(1, 10_000_000_000), sample_count))
         for v in vals:
             asl.insert(v)
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        mem_rss = psutil.Process(os.getpid()).memory_info().rss / (1024**2)
+
         root = asl.get_root()
-
-        # sample a few proof verifications
         test_indices = random.sample(range(1, sample_count + 1), min(20, sample_count))
-
-        proof_times = []
-        verify_times = []
-        gamma_sizes = []
+        proof_times, verify_times, gamma_sizes = [], [], []
 
         for i in test_indices:
             t0 = time.perf_counter()
             leaf_val, proof = asl.get_proof_chain(i)
             t1 = time.perf_counter()
-            proof_time = (t1 - t0) * 1e6  # µs
+            proof_time = (t1 - t0) * 1e6
 
             t2 = time.perf_counter()
             ok, nbytes, gammas = verify_chain(root, leaf_val, proof)
             t3 = time.perf_counter()
             verify_time = (t3 - t2) * 1e6
-
             gamma_storage = sum(len(bytes.fromhex(g)) for g in gammas)
 
             proof_times.append(proof_time)
@@ -271,13 +268,16 @@ if __name__ == "__main__":
 
         results.append({
             "log2(n)": int(math.log2(n)),
-            "n (theoretical)": n,
-            "actual_sampled": sample_count,
+            "theoretical_n": n,
+            "sampled": sample_count,
             "avg_proof_time_µs": sum(proof_times) / len(proof_times),
             "avg_verify_time_µs": sum(verify_times) / len(verify_times),
             "avg_gamma_bytes": sum(gamma_sizes) / len(gamma_sizes),
+            "current_mem_MB": current / (1024**2),
+            "peak_mem_MB": peak / (1024**2),
+            "rss_mem_MB": mem_rss
         })
 
     df = pd.DataFrame(results)
-    print("\n=== Results Summary ===")
+    print("\n=== Memory & Performance Summary ===")
     print(df)
