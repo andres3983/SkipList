@@ -1,32 +1,33 @@
-import hashlib, tracemalloc, os, math, psutil, random, struct, time, pandas as pd
+ import hashlib, random, struct, time, pandas as pd
 
 def canonical_bytes(arg):
-    """serialize arg in a canonical way so hashes are consistent"""
-    if isinstance(arg, int):
-        if arg == 0:
-            b = b'\x00'
-        else:
-            b = arg.to_bytes((arg.bit_length() + 7) // 8, 'big')
-        return b'I' + struct.pack('>I', len(b)) + b
-    elif isinstance(arg, str):
-        b = arg.encode('utf-8')
-        return b'S' + struct.pack('>I', len(b)) + b
-    elif isinstance(arg, bytes):
-        return b'B' + struct.pack('>I', len(arg)) + arg
-    elif arg is None:
-        return b'N' + struct.pack('>I', 0)
-    else:
-        b = str(arg).encode('utf-8')
-        return b'S' + struct.pack('>I', len(b)) + b
+  if isinstance(arg, int):
+    data = b'\x00' if arg == 0 else arg.to_bytes((arg.bit_length() + 7) // 8, 'big')
+    tag = b'I'
+  elif isinstance(arg, str):
+    data = arg.encode('utf-8')
+    tag = b'S'
+  elif isinstance(arg, bytes):
+    data = arg
+    tag = b'B'
+  elif arg is None:
+    data = b''
+    tag = b'N'
+  else: 
+    data = str(arg).encode('utf-8')
+    tag = b'S'
+  return tag + struct.pack('>I', len(data)) + data 
+
 
 def sha256(x: bytes) -> bytes:
     return hashlib.sha256(x).digest()
 
 
 class Node:
-    def __init__(self, level, key=None):
+    def __init__(self, level, key=None, value=None):
         self.level = level
         self.key = key
+        self.value = value
         self.down = None
         self.right = None
         self.rank = 0
@@ -44,8 +45,9 @@ class AuthSkipList:
         self.head = self.level_heads[max_level]
         self.count = 0
 
-    def _hash_leaf(self, key):
-        return sha256(canonical_bytes(str(key)))
+    def _hash_leaf(self, key, value):
+      data = canonical_bytes(key) + canonical_bytes(value)
+      return sha256(data)
 
     def random_level(self):
         lvl = 0
@@ -53,7 +55,7 @@ class AuthSkipList:
             lvl += 1
         return lvl
 
-    def insert(self, key):
+    def insert(self, key, value):
         lvl = self.random_level()
         prevs = [None]*(self.max_level+1)
         node = self.head
@@ -66,9 +68,9 @@ class AuthSkipList:
 
         down_link = None
         for l in range(lvl+1):
-            new = Node(l, key)
+            new = Node(l, key, value)
             if l == 0:
-                new.leaf_hash = self._hash_leaf(key)
+                new.leaf_hash = self._hash_leaf(key, value)
             new.down = down_link
 
             if down_link is not None:
@@ -174,6 +176,8 @@ class AuthSkipList:
             'label': v.label.hex() if v.label else ""
         }
         if v.level == 0:
+            entry['key'] = v.key
+            entry['value'] = v.value
             entry['leaf'] = v.leaf_hash.hex() if v.leaf_hash else ""
         else:
             entry['down'] = v.down.label.hex() if (v.down and v.down.label) else ""
@@ -202,10 +206,12 @@ def verify_chain(root_hash, leaf_val, proof):
         rank = entry['rank']
         right_bytes = bytes.fromhex(entry['right']) if entry.get('right') else b''
         if lvl == 0:
-            leaf_bytes = bytes.fromhex(entry['leaf']) if entry.get('leaf') else b''
+            key_b = canonical_bytes(entry['key'])
+            val_b = canonical_bytes(entry['value'])
+            leaf_hash = sha256(key_b + val_b)
             ser = (canonical_bytes(lvl) +
                    canonical_bytes(rank) +
-                   canonical_bytes(leaf_bytes) +
+                   canonical_bytes(leaf_hash) +
                    canonical_bytes(right_bytes))
         else:
             down_bytes = bytes.fromhex(entry['down']) if entry.get('down') else b''
@@ -229,55 +235,48 @@ def verify_chain(root_hash, leaf_val, proof):
 # Demo
 if __name__ == "__main__":
     random.seed(1)
-    sample_sizes = [2**i for i in range(10, 61, 10)]
-    results = []
+    asl = AuthSkipList(max_level=5)
 
-    for n in sample_sizes:
-        print(f"\n=== Simulating n = 2^{int(math.log2(n))} ({n:.2e}) elements ===")
+    keys = list(range(1000, 2000))
+    vals = list(range(1000, 2000))
+    for key, value in zip(keys,vals):
+        asl.insert(key, value)
 
-        sample_count = min(1000, n)
+    root = asl.get_root()
+    print("Root hash: ", root.hex())
 
-        tracemalloc.start()
-        asl = AuthSkipList(max_level=min(20, int(math.log2(sample_count))))
-        vals = sorted(random.sample(range(1, 10_000_000_000), sample_count))
-        for v in vals:
-            asl.insert(v)
-        current, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-        mem_rss = psutil.Process(os.getpid()).memory_info().rss / (1024**2)
+    data = []
 
-        root = asl.get_root()
-        test_indices = random.sample(range(1, sample_count + 1), min(20, sample_count))
-        proof_times, verify_times, gamma_sizes = [], [], []
+    for i in range(1, len(vals)+1):
+        t0 = time.perf_counter()
+        leaf_val, proof = asl.get_proof_chain(i)
+        t1 = time.perf_counter()
+        proof_time = t1 - t0
 
-        for i in test_indices:
-            t0 = time.perf_counter()
-            leaf_val, proof = asl.get_proof_chain(i)
-            t1 = time.perf_counter()
-            proof_time = (t1 - t0) * 1e6
+        t2 = time.perf_counter()
+        ok, nbytes, gammas = verify_chain(root, leaf_val, proof)
+        t3 = time.perf_counter()
+        verify_time = t3 - t2
 
-            t2 = time.perf_counter()
-            ok, nbytes, gammas = verify_chain(root, leaf_val, proof)
-            t3 = time.perf_counter()
-            verify_time = (t3 - t2) * 1e6
-            gamma_storage = sum(len(bytes.fromhex(g)) for g in gammas)
+        gamma_storage = sum(len(bytes.fromhex(g)) for g in gammas)
 
-            proof_times.append(proof_time)
-            verify_times.append(verify_time)
-            gamma_sizes.append(gamma_storage)
 
-        results.append({
-            "log2(n)": int(math.log2(n)),
-            "theoretical_n": n,
-            "sampled": sample_count,
-            "avg_proof_time_µs": sum(proof_times) / len(proof_times),
-            "avg_verify_time_µs": sum(verify_times) / len(verify_times),
-            "avg_gamma_bytes": sum(gamma_sizes) / len(gamma_sizes),
-            "current_mem_MB": current / (1024**2),
-            "peak_mem_MB": peak / (1024**2),
-            "rss_mem_MB": mem_rss
+        data.append({
+            "Node #": i,
+            "Key": proof[0]['key'],
+            "Proof Computation Time (µs)": proof_time * 1e6,
+            "Proof Verification Time (µs)": verify_time * 1e6,
+            "Proof Gamma Storage (bytes)": gamma_storage,
+            "Proof Serialized Bytes": nbytes
         })
 
-    df = pd.DataFrame(results)
-    print("\n=== Memory & Performance Summary ===")
-    print(df)
+    df = pd.DataFrame(data)
+
+    avg_proof_bytes = df["Proof Serialized Bytes"].mean()
+
+    print(df.head(1000))
+    #print(df.sample(frac=0.1))
+
+    print("\n=== Summary ===")
+    print("Avg proof bytes:", avg_proof_bytes)
+    print("Avg gamma storage:", df["Proof Gamma Storage (bytes)"].mean())
