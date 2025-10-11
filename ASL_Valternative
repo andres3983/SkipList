@@ -56,6 +56,7 @@ class AuthSkipList:
         return lvl
 
     def insert(self, key, value):
+        #Find where key should go 
         lvl = self.random_level()
         prevs = [None]*(self.max_level+1)
         node = self.head
@@ -65,8 +66,10 @@ class AuthSkipList:
             prevs[l] = node
             if node.down:
                 node = node.down
-
+                
         down_link = None
+
+        #Build new  tower
         for l in range(lvl+1):
             new = Node(l, key, value)
             if l == 0:
@@ -79,6 +82,7 @@ class AuthSkipList:
             new.right = prevs[l].right
             prevs[l].right = new
             down_link = new
+
         self.count += 1
         self.recompute()
 
@@ -237,8 +241,8 @@ if __name__ == "__main__":
     random.seed(1)
     asl = AuthSkipList(max_level=5)
 
-    keys = list(range(1000, 2000))
-    vals = list(range(1000, 2000))
+    keys = list(range(1000, 10000))
+    vals = list(range(1000, 10000))
     for key, value in zip(keys,vals):
         asl.insert(key, value)
 
@@ -274,7 +278,7 @@ if __name__ == "__main__":
 
     avg_proof_bytes = df["Proof Serialized Bytes"].mean()
 
-    print(df.head(1000))
+    print(df.head(10000))
     #print(df.sample(frac=0.1))
 
     print("\n=== Summary ===")
