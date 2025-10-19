@@ -47,8 +47,8 @@ class AuthSkipList:
         self.count = 0
 
     def _hash_leaf(self, key, value):
-      data = canonical_bytes(key) + canonical_bytes(value)
-      return sha256(data)
+        data = canonical_bytes(key) + canonical_bytes(value)
+        return sha256(data)
 
     def random_level(self):
         lvl = 0
@@ -57,11 +57,11 @@ class AuthSkipList:
         return lvl
 
     def insert(self, key, value):
-        #Find where key should go
+        # Find where key should go
         lvl = self.random_level()
-        prevs = [None]*(self.max_level+1)
+        prevs = [None] * (self.max_level + 1)
         node = self.head
-        for l in reversed(range(self.max_level+1)):
+        for l in reversed(range(self.max_level + 1)):
             while node.right and node.right.key is not None and node.right.key < key:
                 node = node.right
             prevs[l] = node
@@ -70,15 +70,15 @@ class AuthSkipList:
 
         down_link = None
 
-        #Build new  tower
-        for l in range(lvl+1):
+        # Build new tower
+        for l in range(lvl + 1):
             new = Node(l, key, value)
             if l == 0:
                 new.leaf_hash = self._hash_leaf(key, value)
             new.down = down_link
 
             if down_link is not None:
-              down_link.parent = new
+                down_link.parent = new
 
             new.right = prevs[l].right
             prevs[l].right = new
@@ -89,7 +89,7 @@ class AuthSkipList:
 
     def recompute(self):
         # reset
-        for l in range(self.max_level+1):
+        for l in range(self.max_level + 1):
             n = self.level_heads[l]
             while n:
                 n.rank = 0
@@ -106,12 +106,11 @@ class AuthSkipList:
         self.level_heads[0].rank = total
 
         # internal ranks
-        for l in range(1, self.max_level+1):
+        for l in range(1, self.max_level + 1):
             n = self.level_heads[l].right
             while n:
                 subtotal = 0
                 d = n.down
-
                 while d and (not n.right or d is not n.right.down):
                     subtotal += d.rank
                     d = d.right
@@ -119,16 +118,16 @@ class AuthSkipList:
                 n = n.right
 
         # top totals
-        for l in range(self.max_level+1):
+        for l in range(self.max_level + 1):
             subtotal = 0
             n = self.level_heads[l].right
             while n:
                 subtotal += n.rank
                 n = n.right
-            self.level_heads[l].rank = subtotal;
+            self.level_heads[l].rank = subtotal
 
         # compute labels
-        for l in range(self.max_level+1):
+        for l in range(self.max_level + 1):
             nodes = []
             n = self.level_heads[l]
             while n:
@@ -141,64 +140,61 @@ class AuthSkipList:
                        canonical_bytes(v.rank) +
                        canonical_bytes(child_hash) +
                        canonical_bytes(right_hash))
-
                 v.label = sha256(ser)
 
     def get_proof_chain(self, rank):
-
-      if rank < 1 or rank > self.count:
-        raise IndexError("rank out of range")
-
-
-      leaf = self.level_heads[0].right
-      for _ in range(rank - 1):
-        if leaf is None:
+        if rank < 1 or rank > self.count:
             raise IndexError("rank out of range")
-        leaf = leaf.right
 
-      chain = []
-      node = leaf
-      while node:
-        chain.append(node)
-        node = node.parent
+        leaf = self.level_heads[0].right
+        for _ in range(rank - 1):
+            if leaf is None:
+                raise IndexError("rank out of range")
+            leaf = leaf.right
 
-      if chain[-1] is not self.head:
-        chain.append(self.head)
+        chain = []
+        node = leaf
+        while node:
+            chain.append(node)
+            node = node.parent
 
+        if chain[-1] is not self.head:
+            chain.append(self.head)
 
-      proof = []
-      for v in chain:
-        entry = {
-            'level': v.level,
-            'rank': v.rank,
-            'right': v.right.label.hex() if (v.right and v.right.label) else "",
-            'label': v.label.hex() if v.label else ""
-        }
-        if v.level == 0:
-            entry['key'] = v.key
-            entry['value'] = v.value
-            entry['leaf'] = v.leaf_hash.hex() if v.leaf_hash else ""
-        else:
-            entry['down'] = v.down.label.hex() if (v.down and v.down.label) else ""
-        proof.append(entry)
+        proof = []
+        for v in chain:
+            entry = {
+                'level': v.level,
+                'rank': v.rank,
+                'right': v.right.label.hex() if (v.right and v.right.label) else "",
+                'label': v.label.hex() if v.label else ""
+            }
+            if v.level == 0:
+                entry['key'] = v.key
+                entry['value'] = v.value
+                entry['leaf'] = v.leaf_hash.hex() if v.leaf_hash else ""
+            else:
+                entry['down'] = v.down.label.hex() if (v.down and v.down.label) else ""
+            proof.append(entry)
 
-      return (leaf.leaf_hash.hex() if leaf.leaf_hash else "").lower(), proof
-
+        return (leaf.leaf_hash.hex() if leaf.leaf_hash else "").lower(), proof
 
     def get_root(self):
         return self.head.label
 
 
 def verify_chain(root_hash, leaf_val, proof):
-    if not proof: return False, 0
+    if not proof:
+        return False, 0
     gammas = []
     total_bytes = 0
     first = proof[0]
-    if first['level'] != 0: return False, 0, gammas
-    if not first.get('leaf'): return False, 0, gammas
+    if first['level'] != 0:
+        return False, 0, gammas
+    if not first.get('leaf'):
+        return False, 0, gammas
     if leaf_val and first['leaf'].lower() != leaf_val.lower():
         return False, 0, gammas
-
 
     for entry in proof:
         lvl = entry['level']
@@ -255,7 +251,7 @@ if __name__ == "__main__":
         t2 = time.perf_counter()
         ok, nbytes, gammas = verify_chain(root, leaf_val, proof)
         t3 = time.perf_counter()
-        verify_time = (t3 - t2) * 1e6  
+        verify_time = (t3 - t2) * 1e6
 
         gamma_storage = sum(len(bytes.fromhex(g)) for g in gammas)
 
@@ -271,31 +267,45 @@ if __name__ == "__main__":
     df = pd.DataFrame(data)
 
     summary = pd.DataFrame({
-        "Metric": [
-            "Average Proof Computation Time (µs)",
-            "Average Proof Verification Time (µs)",
-            "Average Gamma Storage (bytes)",
-            "Largest Proof Computation Time (µs)",
-            "Largest Proof Verification Time (µs)",
-            "Largest Gamma Storage (bytes)"
-        ],
-        "Value": [
-            df["Proof Computation Time (µs)"].mean(),
-            df["Proof Verification Time (µs)"].mean(),
-            df["Proof Gamma Storage (bytes)"].mean(),
-            df["Proof Computation Time (µs)"].max(),
-            df["Proof Verification Time (µs)"].max(),
-            df["Proof Gamma Storage (bytes)"].max()
-        ]
-    })
+    "Metric": [
+        "Average Proof Computation Time (µs)",
+        "Average Proof Verification Time (µs)",
+        "Average Gamma Storage (bytes)",
 
-    print("\n================================================================")
-    print(" NOTE:")
-    print(" First run may show higher verification time")
-    print(" than comp.time because dependencies are initializing.")
-    print()
-    print(" Run multiple times for accurate results!")
-    print("================================================================\n")
+        "",  
+      
+        "Largest Proof Computation Time (µs)",
+        "Largest Proof Verification Time (µs)",
+        "Largest Gamma Storage (bytes)",
+
+        "",  
+
+        "Std Dev Proof Computation Time (µs)",
+        "Std Dev Proof Verification Time (µs)",
+        "Std Dev Gamma Storage (bytes)"
+    ],
+    "Value": [
+        df["Proof Computation Time (µs)"].mean(),
+        df["Proof Verification Time (µs)"].mean(),
+        df["Proof Gamma Storage (bytes)"].mean(),
+
+        "", 
+
+      
+        df["Proof Computation Time (µs)"].max(),
+        df["Proof Verification Time (µs)"].max(),
+        df["Proof Gamma Storage (bytes)"].max(),
+
+        "",  
+
+        df["Proof Computation Time (µs)"].std(),
+        df["Proof Verification Time (µs)"].std(),
+        df["Proof Gamma Storage (bytes)"].std()
+    ]
+})
+
 
     print("=== Proof Performance Summary (1024 nodes) ===")
-    print(summary.to_string(index=False, justify="center", float_format="%.2f"))
+    print(summary.to_string(index=False, justify="center", float_format=lambda x: f"{x:.2f}"))
+
+
