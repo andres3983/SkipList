@@ -96,7 +96,7 @@ class AuthSkipList:
                 n.label = None
                 n = n.right
 
-        # leaf ranks
+        # leaf ranks in s.list
         total = 0
         n = self.level_heads[0].right
         while n:
@@ -117,7 +117,7 @@ class AuthSkipList:
                 n.rank = subtotal
                 n = n.right
 
-        # top totals
+        # head node rank
         for l in range(self.max_level + 1):
             subtotal = 0
             n = self.level_heads[l].right
@@ -126,7 +126,7 @@ class AuthSkipList:
                 n = n.right
             self.level_heads[l].rank = subtotal
 
-        # compute labels
+        # compute nodes labels
         for l in range(self.max_level + 1):
             nodes = []
             n = self.level_heads[l]
@@ -214,7 +214,8 @@ def verify_chain(root_hash, leaf_val, proof):
                    canonical_bytes(rank) +
                    canonical_bytes(down_bytes) +
                    canonical_bytes(right_bytes))
-
+        
+        #Adding up for output
         computed = sha256(ser)
         gammas.append(computed.hex())
         total_bytes += len(ser)
@@ -231,7 +232,8 @@ def verify_chain(root_hash, leaf_val, proof):
 if __name__ == "__main__":
     random.seed(1)
     asl = AuthSkipList(max_level=5)
-
+    
+    #sample data
     keys = list(range(1000, 1000 + 1024))
     vals = list(range(1000, 1000 + 1024))
     for key, value in zip(keys, vals):
@@ -241,7 +243,8 @@ if __name__ == "__main__":
     print("Root hash:", root.hex())
 
     data = []
-
+    
+    #comp. and verify timer
     for i in range(1, len(vals) + 1):
         t0 = time.perf_counter()
         leaf_val, proof = asl.get_proof_chain(i)
@@ -307,5 +310,7 @@ if __name__ == "__main__":
 
     print("=== Proof Performance Summary (1024 nodes) ===")
     print(summary.to_string(index=False, justify="center", float_format=lambda x: f"{x:.2f}"))
+
+
 
 
