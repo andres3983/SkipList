@@ -70,15 +70,13 @@ class Node:
 # ---------------------------------
 class AuthSkipList:
     def __init__(self, expected_size):
-        # Calculate max_level based on expected size: log2(N) + small margin
-        # This ensures the structure naturally grows to ~log2(N) height
         self.max_level = max(1, int(math.log2(max(expected_size, 2))) + 2) if expected_size > 0 else 8
         self.level_heads = [Node(l) for l in range(self.max_level + 1)]
         for l in range(self.max_level, 0, -1):
             self.level_heads[l].down = self.level_heads[l - 1]
         self.head = self.level_heads[self.max_level]
         self.count = 0
-        self.actual_height = 0  # Track actual max level used
+        self.actual_height = 0
 
     def _hash_leaf(self, key, value):
         return sha256(canonical_bytes(key) + canonical_bytes(value))
@@ -102,11 +100,8 @@ class AuthSkipList:
             if node.down:
                 node = node.down
         lvl = self.random_level()
-        
-        # Update actual height
         if lvl > self.actual_height:
             self.actual_height = lvl
-            
         down_link = None
         for l in range(lvl + 1):
             new = Node(l, key, value)
@@ -122,21 +117,16 @@ class AuthSkipList:
     # Recompute ranks + labels
     # -----------------------------
     def recompute(self):
-        # Clear ranks and labels
         for l in range(self.max_level + 1):
             n = self.level_heads[l]
             while n:
                 n.rank = 0
                 n.label = None
                 n = n.right
-
-        # Base-level ranks
         n = self.level_heads[0].right
         while n:
             n.rank = 1
             n = n.right
-
-        # Higher-level ranks
         for l in range(1, self.max_level + 1):
             n = self.level_heads[l].right
             while n:
@@ -147,8 +137,6 @@ class AuthSkipList:
                     d = d.right
                 n.rank = subtotal
                 n = n.right
-
-        # Compute labels bottom-up
         for l in range(self.max_level + 1):
             nodes = []
             n = self.level_heads[l]
@@ -165,12 +153,10 @@ class AuthSkipList:
         return self.head.label
     
     def get_actual_height(self):
-        """Return the actual maximum level in use"""
         return self.actual_height
 
     # -----------------------------
-    # Uniform O(log N) proof - TRUE O(log N) computation
-    # This ensures proof size grows with N, not varies per node
+    # Variable-length proof
     # -----------------------------
     def get_proof_chain(self, rank):
         if rank < 1 or rank > self.count:
@@ -178,68 +164,50 @@ class AuthSkipList:
 
         proof = []
         remaining = rank
-        
-        # ALWAYS start from actual_height for uniform proof sizes
-        # This makes proof size deterministic: O(log N) for the structure
-        start_level = self.actual_height
+        current = self.head
 
-        # Traverse from top to bottom using skip list search - O(log N)
-        current = self.level_heads[start_level]
-        leaf = None
-        
-        for level in range(start_level, -1, -1):
-            # Move right at this level using ranks
+        # Traverse from max_level down
+        for level in reversed(range(self.max_level + 1)):
+            moved = False
             while current.right and current.right.rank < remaining:
                 remaining -= current.right.rank
                 current = current.right
-            
-            # Record this level's information (only if not at leaf)
-            if level > 0:
+                moved = True
+            # Only append if this level contributes to the path
+            if level > 0 and moved:
                 proof.append({
                     "level": level,
                     "rank": current.rank,
                     "right": current.right.label.hex() if current.right else ""
                 })
-            else:
-                # At level 0, find the exact leaf node
-                # After traversing down, 'current' is at level 0
-                # Move right the remaining steps (should be minimal)
-                while remaining > 1 and current.right:
-                    remaining -= 1
-                    current = current.right
-                leaf = current
-            
-            # Move down to next level
-            if current.down and level > 0:
+            if current.down:
                 current = current.down
 
-        # Add leaf information
-        if leaf:
-            proof.append({
-                "level": 0,
-                "key": leaf.key,
-                "value": leaf.value,
-                "leaf": leaf.leaf_hash.hex()
-            })
-        else:
-            # Fallback (should not happen with correct rank logic)
-            raise ValueError("Leaf node not found during traversal")
+        # Level 0: find leaf
+        leaf = current
+        while remaining > 1 and leaf.right:
+            remaining -= 1
+            leaf = leaf.right
+        proof.append({
+            "level": 0,
+            "key": leaf.key,
+            "value": leaf.value,
+            "leaf": leaf.leaf_hash.hex()
+        })
 
         return leaf.leaf_hash.hex(), proof
 
 # ---------------------------------
-# Verification (bottom-up, O(log N))
+# Verification
 # ---------------------------------
 def verify_chain(root_hash, leaf_val, proof):
     if not proof:
         return False, 0, []
 
-    # Start with leaf hash
     leaf_entry = proof[-1]
     h = sha256(canonical_bytes(leaf_entry["key"]) + canonical_bytes(leaf_entry["value"]))
     total_bytes = len(canonical_bytes(leaf_entry["key"]) + canonical_bytes(leaf_entry["value"]))
 
-    # Walk bottom-up through proof
     for entry in reversed(proof[:-1]):
         right_bytes = bytes.fromhex(entry.get("right", "")) if entry.get("right") else b''
         rank = entry.get("rank", 1)
@@ -250,7 +218,9 @@ def verify_chain(root_hash, leaf_val, proof):
     ok = (h == root_hash)
     return ok, total_bytes, []
 
-# Demo
+# ---------------------------------
+# Demo + CSV benchmark
+# ---------------------------------
 if __name__ == "__main__":
     if RANDOM_SEED is not None:
         random.seed(RANDOM_SEED)
@@ -258,12 +228,12 @@ if __name__ == "__main__":
         random.seed()
 
     asl = AuthSkipList(expected_size=N)
-    print(f"Calculated max_level: {asl.max_level} (based on log2({N}) + margin)")
+    print(f"Calculated max_level: {asl.max_level}")
 
     keys = list(range(1000, 1000 + N))
     vals = list(range(1000, 1000 + N))
 
-    print(f"Starting insertion of {N} elements (batch recompute every {BATCH_RECOMPUTE})...")
+    print(f"Inserting {N} elements (batch recompute every {BATCH_RECOMPUTE})...")
     t0_total = time.perf_counter()
     for i, (k, v) in enumerate(zip(keys, vals), start=1):
         asl.insert(k, v)
@@ -271,15 +241,14 @@ if __name__ == "__main__":
             asl.recompute()
     asl.recompute()
     t1_total = time.perf_counter()
-    print(f"Insertion + final recompute done in {(t1_total - t0_total):.2f} sec")
-    print(f"Actual skip list height achieved: {asl.get_actual_height()} levels")
-    print(f"Expected proof size: {asl.get_actual_height() + 1} entries (levels 0-{asl.get_actual_height()})")
+    print(f"Insertion + recompute done in {(t1_total - t0_total):.2f} sec")
+    print(f"Actual skip list height: {asl.get_actual_height()}")
 
     root = asl.get_root()
     print("Root hash:", root.hex())
 
-    csv_filename = f"asl_results_{N}nodes_logN.csv"
-    print(f"Sampling every {SAMPLE_EVERY}th proof and writing results to {csv_filename} ...")
+    csv_filename = f"asl_results_{N}nodes_varlength.csv"
+    print(f"Sampling every {SAMPLE_EVERY}th proof and writing to {csv_filename}...")
 
     with open(csv_filename, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=[
@@ -303,7 +272,6 @@ if __name__ == "__main__":
             t3 = time.perf_counter()
             verify_time = (t3 - t2) * 1e6
 
-            # Gamma storage is 32 bytes per level in proof
             proof_length = len(proof)
             gamma_storage = proof_length * 32
 
@@ -317,15 +285,9 @@ if __name__ == "__main__":
                 "Proof Length (levels)": proof_length
             })
 
-    print("Sampling complete. Building summary with pandas...")
+    print("Sampling complete. Summary with pandas...")
     df = pd.read_csv(csv_filename)
-    
-    print("\n=== Proof Length Distribution ===")
-    length_counts = df["Proof Length (levels)"].value_counts().sort_index()
-    print(length_counts)
-    if len(length_counts) == 1:
-        print(f"✓ All proofs have uniform length: {length_counts.index[0]} levels")
-    
+
     summary = pd.DataFrame({
         "Metric": [
             "Average Proof Computation Time (µs)",
@@ -361,7 +323,5 @@ if __name__ == "__main__":
         ]
     })
 
-    summary.to_csv(f"Results_{N}nodes_logN.csv", index=False)
-    print(f"\n=== Proof Performance Summary ({N} nodes, sampled) ===")
-    print(f"Actual Skip List Height: {asl.get_actual_height()} levels")
+    summary.to_csv(f"Results_{N}nodes_varlength.csv", index=False)
     print(summary.to_string(index=False, justify="center", float_format=lambda x: f"{x:.2f}"))
