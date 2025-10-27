@@ -169,7 +169,7 @@ class AuthSkipList:
         return self.actual_height
 
     # -----------------------------
-    # Uniform O(log N) proof - always from actual_height
+    # Uniform O(log N) proof - TRUE O(log N) computation
     # This ensures proof size grows with N, not varies per node
     # -----------------------------
     def get_proof_chain(self, rank):
@@ -183,10 +183,12 @@ class AuthSkipList:
         # This makes proof size deterministic: O(log N) for the structure
         start_level = self.actual_height
 
-        # Traverse from top to bottom
+        # Traverse from top to bottom using skip list search - O(log N)
         current = self.level_heads[start_level]
+        leaf = None
+        
         for level in range(start_level, -1, -1):
-            # Move right at this level
+            # Move right at this level using ranks
             while current.right and current.right.rank < remaining:
                 remaining -= current.right.rank
                 current = current.right
@@ -198,23 +200,30 @@ class AuthSkipList:
                     "rank": current.rank,
                     "right": current.right.label.hex() if current.right else ""
                 })
+            else:
+                # At level 0, find the exact leaf node
+                # After traversing down, 'current' is at level 0
+                # Move right the remaining steps (should be minimal)
+                while remaining > 1 and current.right:
+                    remaining -= 1
+                    current = current.right
+                leaf = current
             
-            # Move down
-            if current.down:
+            # Move down to next level
+            if current.down and level > 0:
                 current = current.down
 
-        # Find the leaf
-        leaf = self.level_heads[0].right
-        for _ in range(rank - 1):
-            leaf = leaf.right
-
         # Add leaf information
-        proof.append({
-            "level": 0,
-            "key": leaf.key,
-            "value": leaf.value,
-            "leaf": leaf.leaf_hash.hex()
-        })
+        if leaf:
+            proof.append({
+                "level": 0,
+                "key": leaf.key,
+                "value": leaf.value,
+                "leaf": leaf.leaf_hash.hex()
+            })
+        else:
+            # Fallback (should not happen with correct rank logic)
+            raise ValueError("Leaf node not found during traversal")
 
         return leaf.leaf_hash.hex(), proof
 
@@ -356,4 +365,3 @@ if __name__ == "__main__":
     print(f"\n=== Proof Performance Summary ({N} nodes, sampled) ===")
     print(f"Actual Skip List Height: {asl.get_actual_height()} levels")
     print(summary.to_string(index=False, justify="center", float_format=lambda x: f"{x:.2f}"))
-    
