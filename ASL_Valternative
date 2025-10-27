@@ -4,9 +4,7 @@ import hashlib, random, struct, time, csv, math
 import pandas as pd
 import argparse
 
-# ---------------------------------
-# CLI argument: number of elements
-# ---------------------------------
+# CLI --size #
 parser = argparse.ArgumentParser(description="O(log N) Authenticated Skip List benchmark")
 parser.add_argument(
     "--size", "-s",
@@ -18,16 +16,11 @@ args = parser.parse_args()
 N = args.size
 print(f"Using N = {N} nodes")
 
-# ---------------------------------
-# Config
-# ---------------------------------
+#Configs
 BATCH_RECOMPUTE = 512
 SAMPLE_EVERY = 10
-RANDOM_SEED = None   # None = random, or set e.g. 1 for reproducible
+RANDOM_SEED = None   
 
-# ---------------------------------
-# Hash utilities
-# ---------------------------------
 def sha256(x: bytes) -> bytes:
     return hashlib.sha256(x).digest()
 
@@ -49,9 +42,7 @@ def canonical_bytes(arg):
         tag = b'S'
     return tag + struct.pack('>I', len(data)) + data
 
-# ---------------------------------
-# Node class
-# ---------------------------------
+
 class Node:
     __slots__ = ('level', 'key', 'value', 'down', 'right', 'rank',
                  'label', 'leaf_hash')
@@ -65,9 +56,7 @@ class Node:
         self.label = None
         self.leaf_hash = None
 
-# ---------------------------------
-# Authenticated Skip List
-# ---------------------------------
+
 class AuthSkipList:
     def __init__(self, expected_size):
         self.max_level = max(1, int(math.log2(max(expected_size, 2))) + 2) if expected_size > 0 else 8
@@ -87,9 +76,6 @@ class AuthSkipList:
             lvl += 1
         return lvl
 
-    # -----------------------------
-    # Insert
-    # -----------------------------
     def insert(self, key, value):
         prevs = [None] * (self.max_level + 1)
         node = self.head
@@ -113,9 +99,6 @@ class AuthSkipList:
             down_link = new
         self.count += 1
 
-    # -----------------------------
-    # Recompute ranks + labels
-    # -----------------------------
     def recompute(self):
         for l in range(self.max_level + 1):
             n = self.level_heads[l]
@@ -155,9 +138,6 @@ class AuthSkipList:
     def get_actual_height(self):
         return self.actual_height
 
-    # -----------------------------
-    # Variable-length proof
-    # -----------------------------
     def get_proof_chain(self, rank):
         if rank < 1 or rank > self.count:
             raise IndexError("rank out of range")
@@ -166,14 +146,14 @@ class AuthSkipList:
         remaining = rank
         current = self.head
 
-        # Traverse from max_level down
+        # Bottom to top for proof chain
         for level in reversed(range(self.max_level + 1)):
             moved = False
             while current.right and current.right.rank < remaining:
                 remaining -= current.right.rank
                 current = current.right
                 moved = True
-            # Only append if this level contributes to the path
+            # Only add if relevant to path
             if level > 0 and moved:
                 proof.append({
                     "level": level,
@@ -183,7 +163,7 @@ class AuthSkipList:
             if current.down:
                 current = current.down
 
-        # Level 0: find leaf
+        # find leaf
         leaf = current
         while remaining > 1 and leaf.right:
             remaining -= 1
@@ -197,9 +177,7 @@ class AuthSkipList:
 
         return leaf.leaf_hash.hex(), proof
 
-# ---------------------------------
-# Verification
-# ---------------------------------
+#Verify proof
 def verify_chain(root_hash, leaf_val, proof):
     if not proof:
         return False, 0, []
@@ -218,9 +196,7 @@ def verify_chain(root_hash, leaf_val, proof):
     ok = (h == root_hash)
     return ok, total_bytes, []
 
-# ---------------------------------
-# Demo + CSV benchmark
-# ---------------------------------
+# Demo
 if __name__ == "__main__":
     if RANDOM_SEED is not None:
         random.seed(RANDOM_SEED)
@@ -259,6 +235,7 @@ if __name__ == "__main__":
         ])
         writer.writeheader()
 
+        # Time calcs for verify and comp. time
         for i in range(1, N + 1):
             if i % SAMPLE_EVERY != 0:
                 continue
