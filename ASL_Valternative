@@ -5,7 +5,7 @@ import pandas as pd
 import argparse
 
 # CLI --size #
-parser = argparse.ArgumentParser(description="O(log N) Authenticated Skip List benchmark")
+parser = argparse.ArgumentParser(description="Benchmark")
 parser.add_argument(
     "--size", "-s",
     type=int,
@@ -14,10 +14,10 @@ parser.add_argument(
 )
 args = parser.parse_args()
 N = args.size
-print(f"Using N = {N} nodes")
 
 #Configs
 BATCH_RECOMPUTE = 512
+# Every nth time proof reported to csv
 SAMPLE_EVERY = 10
 RANDOM_SEED = None   
 
@@ -44,6 +44,7 @@ def canonical_bytes(arg):
 
 
 class Node:
+    #Slots to acess array instead of dict. ~ memory saved
     __slots__ = ('level', 'key', 'value', 'down', 'right', 'rank',
                  'label', 'leaf_hash')
     def __init__(self, level, key=None, value=None):
@@ -59,6 +60,7 @@ class Node:
 
 class AuthSkipList:
     def __init__(self, expected_size):
+        #Limit s.list to reasonable limit
         self.max_level = max(1, int(math.log2(max(expected_size, 2))) + 2) if expected_size > 0 else 8
         self.level_heads = [Node(l) for l in range(self.max_level + 1)]
         for l in range(self.max_level, 0, -1):
