@@ -174,7 +174,6 @@ class AuthSkipList:
     def get_actual_height(self):
         return self.actual_height
 
-    # proof chain with probabilistic gamma
     def get_proof_chain(self, rank):
         if rank < 1 or rank > self.count:
             raise IndexError("rank out of range")
@@ -190,7 +189,6 @@ class AuthSkipList:
                 current = current.right
             right_label_hex = current.right.label.hex() if (current.right and current.right.label) else ""
             
-            # Probabilistically decide whether to include gamma at this level
             include_gamma = random.random() < GAMMA_PROBABILITY
             
             if level > 0:
