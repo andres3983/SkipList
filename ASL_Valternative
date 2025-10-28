@@ -132,7 +132,6 @@ class AuthSkipList:
             down_link = new
         self.count += 1
 
-        # Update ranks and labels along insertion path only: O(log n)
         self._update_path(prevs, new_nodes)
 
     def _update_path(self, prevs, new_nodes):
@@ -142,7 +141,7 @@ class AuthSkipList:
         for l in range(len(new_nodes)):
             new_nodes[l].rank = self._compute_rank(new_nodes[l])
         
-        # Update ranks for nodes on the insertion path
+        # Update ranks for nodes on the insert. path
         for l in range(len(prevs)):
             if prevs[l] is None:
                 continue
@@ -150,7 +149,7 @@ class AuthSkipList:
         
         # Must update labels from bottom to top so child labels are ready
         for l in range(self.actual_height + 1):
-            # Update new node label at this level if it exists
+
             if l < len(new_nodes):
                 new_nodes[l].label = self._compute_label(new_nodes[l])
             
@@ -181,7 +180,7 @@ class AuthSkipList:
             raise IndexError("rank out of range")
 
         proof = []
-        gammas = []  # Track which levels include gamma
+        gammas = []  
         remaining = rank
         current = self.head
 
@@ -297,7 +296,7 @@ if __name__ == "__main__":
             verify_time = (t3 - t2) * 1e6
 
             proof_length = len(proof)
-            gamma_storage = gamma_count * 32  # 32 bytes per gamma
+            gamma_storage = gamma_count * 32  
 
             writer.writerow({
                 "Node #": i,
