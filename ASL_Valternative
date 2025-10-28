@@ -19,7 +19,6 @@ BATCH_RECOMPUTE = 512
 SAMPLE_EVERY = 10
 RANDOM_SEED = None
 
-# ------------------- Utility functions -------------------
 
 def sha256(x: bytes) -> bytes:
     return hashlib.sha256(x).digest()
@@ -42,7 +41,6 @@ def canonical_bytes(arg):
         tag = b'S'
     return tag + struct.pack('>I', len(data)) + data
 
-# ------------------- Data structures -------------------
 
 class Node:
     __slots__ = ('level', 'key', 'value', 'down', 'right', 'rank', 'label', 'leaf_hash')
@@ -56,7 +54,6 @@ class Node:
         self.label = None
         self.leaf_hash = None
 
-# ------------------- Authenticated Skip List -------------------
 
 class AuthSkipList:
     def __init__(self, expected_size):
@@ -103,12 +100,11 @@ class AuthSkipList:
               + canonical_bytes(child_hash) + canonical_bytes(right_hash)
         return sha256(ser)
 
-    # ---------------- O(log n) insertion ----------------
     def insert(self, key, value):
         prevs = [None] * (self.max_level + 1)
         node = self.head
         
-        # Find insertion path: O(log n)
+        # Find insertion path
         for l in reversed(range(self.max_level + 1)):
             while node.right and node.right.key is not None and node.right.key < key:
                 node = node.right
@@ -120,7 +116,6 @@ class AuthSkipList:
         if lvl > self.actual_height:
             self.actual_height = lvl
 
-        # Insert new nodes: O(log n)
         down_link = None
         new_nodes = []
         for l in range(lvl + 1):
@@ -140,19 +135,18 @@ class AuthSkipList:
         self._update_path(prevs, new_nodes)
 
     def _update_path(self, prevs, new_nodes):
-        """Update ranks and labels along the insertion path only."""
+        """Update ranks and labels along the insert. path only."""
         
-        # Phase 1: Update ranks bottom-up for new nodes
+        # Update ranks bottom-up for new nodes
         for l in range(len(new_nodes)):
             new_nodes[l].rank = self._compute_rank(new_nodes[l])
         
-        # Phase 2: Update ranks for nodes on the insertion path
+        # Update ranks for nodes on the insertion path
         for l in range(len(prevs)):
             if prevs[l] is None:
                 continue
             prevs[l].rank = self._compute_rank(prevs[l])
         
-        # Phase 3: Update labels bottom-up
         # Must update labels from bottom to top so child labels are ready
         for l in range(self.actual_height + 1):
             # Update new node label at this level if it exists
@@ -168,7 +162,7 @@ class AuthSkipList:
             head.rank = self._compute_rank(head)
             head.label = self._compute_label(head)
         
-        # Phase 4: Update head nodes above actual_height up to max_level
+        # Update head nodes above actual_height up to max_level
         for l in range(self.actual_height + 1, self.max_level + 1):
             head = self.level_heads[l]
             head.rank = self._compute_rank(head)
@@ -180,7 +174,7 @@ class AuthSkipList:
     def get_actual_height(self):
         return self.actual_height
 
-    # ---------------- O(log n) proof chain ----------------
+    # proof chain
     def get_proof_chain(self, rank):
         if rank < 1 or rank > self.count:
             raise IndexError("rank out of range")
@@ -189,7 +183,6 @@ class AuthSkipList:
         remaining = rank
         current = self.head
 
-        # Each level visited at most once → O(log n)
         for level in reversed(range(self.max_level + 1)):
             while current.right and current.right.rank < remaining:
                 remaining -= current.right.rank
@@ -218,7 +211,6 @@ class AuthSkipList:
 
         return leaf.leaf_hash.hex(), proof
 
-# ------------------- Verification -------------------
 
 def verify_chain(root_hash, leaf_val, proof):
     if not proof:
@@ -238,7 +230,7 @@ def verify_chain(root_hash, leaf_val, proof):
     ok = (h == root_hash)
     return ok, total_bytes, []
 
-# ------------------- Benchmark Driver -------------------
+# Demo
 
 if __name__ == "__main__":
     if RANDOM_SEED is not None:
@@ -275,6 +267,7 @@ if __name__ == "__main__":
         ])
         writer.writeheader()
 
+        # Comp. and verify timer
         for i in range(1, N + 1):
             if i % SAMPLE_EVERY != 0:
                 continue
@@ -341,4 +334,3 @@ if __name__ == "__main__":
 
     summary.to_csv(f"Results_{N}nodes_logproof.csv", index=False)
     print(summary.to_string(index=False, justify="center", float_format=lambda x: f"{x:.2f}"))
-    
