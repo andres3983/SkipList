@@ -18,6 +18,7 @@ N = args.size
 BATCH_RECOMPUTE = 512
 SAMPLE_EVERY = 10
 RANDOM_SEED = None
+GAMMA_PROBABILITY = 0.5  # Probability of including gamma at each level
 
 
 def sha256(x: bytes) -> bytes:
@@ -174,12 +175,13 @@ class AuthSkipList:
     def get_actual_height(self):
         return self.actual_height
 
-    # proof chain
+    # proof chain with probabilistic gamma
     def get_proof_chain(self, rank):
         if rank < 1 or rank > self.count:
             raise IndexError("rank out of range")
 
         proof = []
+        gammas = []  # Track which levels include gamma
         remaining = rank
         current = self.head
 
@@ -188,12 +190,19 @@ class AuthSkipList:
                 remaining -= current.right.rank
                 current = current.right
             right_label_hex = current.right.label.hex() if (current.right and current.right.label) else ""
+            
+            # Probabilistically decide whether to include gamma at this level
+            include_gamma = random.random() < GAMMA_PROBABILITY
+            
             if level > 0:
                 proof.append({
                     "level": level,
                     "rank": current.rank,
-                    "right": right_label_hex
+                    "right": right_label_hex,
+                    "has_gamma": include_gamma
                 })
+                if include_gamma:
+                    gammas.append(level)
             if current.down:
                 current = current.down
 
@@ -206,10 +215,11 @@ class AuthSkipList:
             "level": 0,
             "key": leaf.key,
             "value": leaf.value,
-            "leaf": leaf.leaf_hash.hex()
+            "leaf": leaf.leaf_hash.hex(),
+            "has_gamma": False
         })
 
-        return leaf.leaf_hash.hex(), proof
+        return leaf.leaf_hash.hex(), proof, gammas
 
 
 def verify_chain(root_hash, leaf_val, proof):
@@ -219,6 +229,7 @@ def verify_chain(root_hash, leaf_val, proof):
     leaf_entry = proof[-1]
     h = sha256(canonical_bytes(leaf_entry["key"]) + canonical_bytes(leaf_entry["value"]))
     total_bytes = len(canonical_bytes(leaf_entry["key"]) + canonical_bytes(leaf_entry["value"]))
+    gamma_count = 0
 
     for entry in reversed(proof[:-1]):
         right_bytes = bytes.fromhex(entry.get("right", "")) if entry.get("right") else b''
@@ -226,9 +237,13 @@ def verify_chain(root_hash, leaf_val, proof):
         ser = canonical_bytes(entry["level"]) + canonical_bytes(rank) + canonical_bytes(h) + canonical_bytes(right_bytes)
         h = sha256(ser)
         total_bytes += len(ser)
+        
+        # Count gamma storage
+        if entry.get("has_gamma", False):
+            gamma_count += 1
 
     ok = (h == root_hash)
-    return ok, total_bytes, []
+    return ok, total_bytes, gamma_count
 
 # Demo
 
@@ -255,7 +270,7 @@ if __name__ == "__main__":
     root = asl.get_root()
     print("Root hash:", root.hex())
 
-    csv_filename = f"asl_results_{N}nodes_logproof.csv"
+    csv_filename = f"asl_results_{N}nodes_probgamma.csv"
     print(f"Sampling every {SAMPLE_EVERY}th proof and writing to {csv_filename}...")
 
     with open(csv_filename, "w", newline="") as f:
@@ -263,7 +278,7 @@ if __name__ == "__main__":
             "Node #", "Key", "Proof Computation Time (µs)",
             "Proof Verification Time (µs)",
             "Proof Gamma Storage (bytes)", "Proof Serialized Bytes",
-            "Proof Length (levels)"
+            "Proof Length (levels)", "Gamma Count"
         ])
         writer.writeheader()
 
@@ -272,17 +287,17 @@ if __name__ == "__main__":
             if i % SAMPLE_EVERY != 0:
                 continue
             t0 = time.perf_counter()
-            leaf_val, proof = asl.get_proof_chain(i)
+            leaf_val, proof, gamma_levels = asl.get_proof_chain(i)
             t1 = time.perf_counter()
             proof_time = (t1 - t0) * 1e6
 
             t2 = time.perf_counter()
-            ok, nbytes, gammas = verify_chain(root, leaf_val, proof)
+            ok, nbytes, gamma_count = verify_chain(root, leaf_val, proof)
             t3 = time.perf_counter()
             verify_time = (t3 - t2) * 1e6
 
             proof_length = len(proof)
-            gamma_storage = proof_length * 32
+            gamma_storage = gamma_count * 32  # 32 bytes per gamma
 
             writer.writerow({
                 "Node #": i,
@@ -291,7 +306,8 @@ if __name__ == "__main__":
                 "Proof Verification Time (µs)": verify_time,
                 "Proof Gamma Storage (bytes)": gamma_storage,
                 "Proof Serialized Bytes": nbytes,
-                "Proof Length (levels)": proof_length
+                "Proof Length (levels)": proof_length,
+                "Gamma Count": gamma_count
             })
 
     print("Sampling complete. Summary with pandas...")
@@ -315,22 +331,23 @@ if __name__ == "__main__":
             "Std Dev Proof Serialized Bytes",
         ],
         "Value": [
-            df["Proof Computation Time (µs)"].mean(),
-            df["Proof Verification Time (µs)"].mean(),
-            df["Proof Gamma Storage (bytes)"].mean(),
-            df["Proof Serialized Bytes"].mean(),
+            round(df["Proof Computation Time (µs)"].mean(), 2),
+            round(df["Proof Verification Time (µs)"].mean(), 2),
+            round(df["Proof Gamma Storage (bytes)"].mean(), 2),
+            round(df["Proof Serialized Bytes"].mean(), 2),
             "",
-            df["Proof Computation Time (µs)"].max(),
-            df["Proof Verification Time (µs)"].max(),
-            df["Proof Gamma Storage (bytes)"].max(),
-            df["Proof Serialized Bytes"].max(),
+            round(df["Proof Computation Time (µs)"].max(), 2),
+            round(df["Proof Verification Time (µs)"].max(), 2),
+            round(df["Proof Gamma Storage (bytes)"].max(), 2),
+            round(df["Proof Serialized Bytes"].max(), 2),
             "",
-            df["Proof Computation Time (µs)"].std(),
-            df["Proof Verification Time (µs)"].std(),
-            df["Proof Gamma Storage (bytes)"].std(),
-            df["Proof Serialized Bytes"].std(),
+            round(df["Proof Computation Time (µs)"].std(), 2),
+            round(df["Proof Verification Time (µs)"].std(), 2),
+            round(df["Proof Gamma Storage (bytes)"].std(), 2),
+            round(df["Proof Serialized Bytes"].std(), 2),
         ]
     })
 
-    summary.to_csv(f"Results_{N}nodes_logproof.csv", index=False)
+    summary.to_csv(f"Results_{N}nodes.csv", index=False)
+    print(f"=== Proof Performance Summary ({N} nodes) ===")
     print(summary.to_string(index=False, justify="center", float_format=lambda x: f"{x:.2f}"))
