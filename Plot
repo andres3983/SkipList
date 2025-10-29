@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+import pandas as pd
+import matplotlib.pyplot as plt
+import glob
+import re
+import math
+
+# === Load all result CSVs ===
+files = sorted(glob.glob("Results_*nodes.csv"), key=lambda x: int(re.findall(r"Results_(\d+)nodes", x)[0]))
+data = []
+
+for file in files:
+    n = int(re.findall(r"Results_(\d+)nodes", file)[0])
+    df = pd.read_csv(file)
+    
+    avg_proof_time = df.loc[df['Metric'] == "Average Proof Computation Time (µs)", "Value"].values[0]
+    avg_verify_time = df.loc[df['Metric'] == "Average Proof Verification Time (µs)", "Value"].values[0]
+    avg_gamma = df.loc[df['Metric'] == "Average Gamma Storage (bytes)", "Value"].values[0]
+    avg_bytes = df.loc[df['Metric'] == "Average Proof Serialized Bytes", "Value"].values[0]
+
+    data.append({
+        "Nodes": n,
+        "Avg Proof Time (µs)": float(avg_proof_time),
+        "Avg Verify Time (µs)": float(avg_verify_time),
+        "Avg Gamma Storage (bytes)": float(avg_gamma),
+        "Avg Proof Bytes": float(avg_bytes)
+    })
+
+df_all = pd.DataFrame(data)
+
+# === Plot ===
+plt.figure(figsize=(10,6))
+plt.plot(df_all["Nodes"], df_all["Avg Proof Time (µs)"], marker='o', label="Proof Generation Time (µs)")
+plt.plot(df_all["Nodes"], df_all["Avg Verify Time (µs)"], marker='o', label="Proof Verification Time (µs)")
+plt.xscale("log", base=2)
+plt.yscale("log")
+plt.xlabel("Number of Nodes (log₂ scale)")
+plt.ylabel("Time (µs, log scale)")
+plt.title("Authenticated Skip List Proof Times vs. List Size")
+plt.legend()
+plt.grid(True, which="both", ls="--", lw=0.5)
+plt.tight_layout()
+plt.savefig("ASL_Proof_Times.png", dpi=300)
+plt.show()
+
+
+plt.figure(figsize=(10,6))
+plt.plot(df_all["Nodes"], df_all["Avg Gamma Storage (bytes)"], marker='s', label="Gamma Storage (bytes)")
+plt.plot(df_all["Nodes"], df_all["Avg Proof Bytes"], marker='s', label="Proof Serialized Bytes")
+plt.xscale("log", base=2)
+plt.yscale("log")
+plt.xlabel("Number of Nodes (log₂ scale)")
+plt.ylabel("Bytes (log scale)")
+plt.title("Proof Size Scaling in Authenticated Skip List")
+plt.legend()
+plt.grid(True, which="both", ls="--", lw=0.5)
+plt.tight_layout()
+plt.savefig("ASL_Proof_Sizes.png", dpi=300)
+plt.show()
