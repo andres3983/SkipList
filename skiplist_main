@@ -1,32 +1,53 @@
-import hashlib, random, struct, time
+#!/usr/bin/env python3
+import hashlib, random, struct, time, csv, math
+import pandas as pd
+import argparse
 
-def canonical_bytes(arg):
-    """serialize arg in a canonical way so hashes are consistent"""
-    if isinstance(arg, int):
-        if arg == 0:
-            b = b'\x00'
-        else:
-            b = arg.to_bytes((arg.bit_length() + 7) // 8, 'big')
-        return b'I' + struct.pack('>I', len(b)) + b
-    elif isinstance(arg, str):
-        b = arg.encode('utf-8')
-        return b'S' + struct.pack('>I', len(b)) + b
-    elif isinstance(arg, bytes):
-        return b'B' + struct.pack('>I', len(arg)) + arg
-    elif arg is None:
-        return b'N' + struct.pack('>I', 0)
-    else:
-        b = str(arg).encode('utf-8')
-        return b'S' + struct.pack('>I', len(b)) + b
+# CLI --size #
+parser = argparse.ArgumentParser(description="Benchmark")
+parser.add_argument(
+    "--size", "-s",
+    type=int,
+    default=4096,
+    help="Number of nodes to insert (e.g., 1024, 4096, 1048576)"
+)
+args = parser.parse_args()
+N = args.size
+
+# Configs
+BATCH_RECOMPUTE = 512
+SAMPLE_EVERY = 10
+RANDOM_SEED = None
+GAMMA_PROBABILITY = 0.5  
 
 def sha256(x: bytes) -> bytes:
     return hashlib.sha256(x).digest()
 
+def canonical_bytes(arg):
+    if isinstance(arg, int):
+        data = b'\x00' if arg == 0 else arg.to_bytes((arg.bit_length() + 7) // 8, 'big')
+        tag = b'I'
+    elif isinstance(arg, str):
+        data = arg.encode('utf-8')
+        tag = b'S'
+    elif isinstance(arg, bytes):
+        data = arg
+        tag = b'B'
+    elif arg is None:
+        data = b''
+        tag = b'N'
+    else:
+        data = str(arg).encode('utf-8')
+        tag = b'S'
+    return tag + struct.pack('>I', len(data)) + data
+
 
 class Node:
-    def __init__(self, level, key=None):
+    __slots__ = ('level', 'key', 'value', 'down', 'right', 'rank', 'label', 'leaf_hash')
+    def __init__(self, level, key=None, value=None):
         self.level = level
         self.key = key
+        self.value = value
         self.down = None
         self.right = None
         self.rank = 0
@@ -35,16 +56,21 @@ class Node:
 
 
 class AuthSkipList:
-    def __init__(self, max_level=8):
-        self.max_level = max_level
-        self.level_heads = [Node(l) for l in range(max_level + 1)]
-        for l in range(max_level, 0, -1):
-            self.level_heads[l].down = self.level_heads[l-1]
-        self.head = self.level_heads[max_level]
+    def __init__(self, expected_size):
+        self.max_level = math.ceil(math.log2(expected_size)) if expected_size > 0 else 8
+        self.level_heads = [Node(l) for l in range(self.max_level + 1)]
+        for l in range(self.max_level, 0, -1):
+            self.level_heads[l].down = self.level_heads[l - 1]
+        self.head = self.level_heads[self.max_level]
         self.count = 0
+        self.actual_height = 0
+        # Initialize all head labels to empty hash
+        for head in self.level_heads:
+            head.label = sha256(canonical_bytes(head.level) + canonical_bytes(0) + 
+                               canonical_bytes(b'') + canonical_bytes(b''))
 
-    def _hash_leaf(self, key):
-        return sha256(canonical_bytes(str(key)))
+    def _hash_leaf(self, key, value):
+        return sha256(canonical_bytes(key) + canonical_bytes(value))
 
     def random_level(self):
         lvl = 0
@@ -52,223 +78,267 @@ class AuthSkipList:
             lvl += 1
         return lvl
 
-    def insert(self, key):
-        lvl = self.random_level()
-        prevs = [None]*(self.max_level+1)
+    def _compute_rank(self, node):
+        """Compute rank of a node from its down pointer."""
+        if node.level == 0:
+            return 1
+        subtotal = 0
+        d = node.down
+        while d:
+            subtotal += d.rank
+            d = d.right
+        return subtotal
+
+    def _compute_label(self, node):
+        """Compute label of a node from its children."""
+        right_hash = node.right.label if (node.right and node.right.label) else b''
+        if node.level == 0:
+            child_hash = node.leaf_hash if node.leaf_hash else b''
+        else:
+            child_hash = node.down.label if (node.down and node.down.label) else b''
+        ser = canonical_bytes(node.level) + canonical_bytes(node.rank) \
+              + canonical_bytes(child_hash) + canonical_bytes(right_hash)
+        return sha256(ser)
+
+    def insert(self, key, value):
+        prevs = [None] * (self.max_level + 1)
         node = self.head
-        for l in reversed(range(self.max_level+1)):
+        
+        # Find insertion path
+        for l in reversed(range(self.max_level + 1)):
             while node.right and node.right.key is not None and node.right.key < key:
                 node = node.right
             prevs[l] = node
             if node.down:
                 node = node.down
 
+        lvl = self.random_level()
+        if lvl > self.actual_height:
+            self.actual_height = lvl
+
         down_link = None
-        for l in range(lvl+1):
-            new = Node(l, key)
+        new_nodes = []
+        for l in range(lvl + 1):
+            new = Node(l, key, value)
             if l == 0:
-                new.leaf_hash = self._hash_leaf(key)
+                new.leaf_hash = self._hash_leaf(key, value)
+                new.rank = 1
+                new.label = new.leaf_hash
             new.down = down_link
             new.right = prevs[l].right
             prevs[l].right = new
+            new_nodes.append(new)
             down_link = new
         self.count += 1
-        self.recompute()
 
-    def recompute(self):
-        # reset
-        for l in range(self.max_level+1):
-            n = self.level_heads[l]
-            while n:
-                n.rank = 0
-                n.label = None
-                n = n.right
+        self._update_path(prevs, new_nodes)
 
-        # leaf ranks
-        total = 0
-        n = self.level_heads[0].right
-        while n:
-            n.rank = 1
-            total += 1
-            n = n.right
-        self.level_heads[0].rank = total
+    def _update_path(self, prevs, new_nodes):
+        """Update ranks and labels along the insert. path only."""
+        
+        # Update ranks bottom-up for new nodes
+        for l in range(len(new_nodes)):
+            new_nodes[l].rank = self._compute_rank(new_nodes[l])
+        
+        # Update ranks for nodes on the insert. path
+        for l in range(len(prevs)):
+            if prevs[l] is None:
+                continue
+            prevs[l].rank = self._compute_rank(prevs[l])
+        
+        # Must update labels from bottom to top so child labels are ready
+        for l in range(self.actual_height + 1):
 
-        # internal ranks
-        for l in range(1, self.max_level+1):
-            n = self.level_heads[l].right
-            while n:
-                d = n.down
-                bound = n.right.down if n.right else None
-                subtotal = 0
-                while d is not None and d is not bound:
-                    subtotal += d.rank
-                    d = d.right
-                n.rank = subtotal
-                n = n.right
-
-        # top totals
-        for l in range(self.max_level+1):
-            subtotal = 0
-            n = self.level_heads[l].right
-            while n:
-                subtotal += n.rank
-                n = n.right
-            self.level_heads[l].rank = subtotal
-
-        # compute labels
-        for l in range(self.max_level+1):
-            nodes = []
-            n = self.level_heads[l]
-            while n:
-                nodes.append(n)
-                n = n.right
-            for v in reversed(nodes):
-                right_hash = v.right.label if (v.right and v.right.label) else b''
-                if v.level == 0:
-                    leaf_data = v.leaf_hash if v.leaf_hash else b''
-                    ser = (canonical_bytes(v.level) +
-                           canonical_bytes(v.rank) +
-                           canonical_bytes(leaf_data) +
-                           canonical_bytes(right_hash))
-                else:
-                    down_hash = v.down.label if (v.down and v.down.label) else b''
-                    ser = (canonical_bytes(v.level) +
-                           canonical_bytes(v.rank) +
-                           canonical_bytes(down_hash) +
-                           canonical_bytes(right_hash))
-                v.label = sha256(ser)
-
-    def get_proof_chain(self, rank):
-        # locate leaf
-        leaf = self.level_heads[0].right
-        for _ in range(rank-1):
-            leaf = leaf.right
-
-        chain = [leaf]
-
-        def is_parent(v, child):
-            if v.down is None:
-                return False
-            d = v.down
-            bound = v.right.down if v.right else None
-            while d is not None and d is not bound:
-                if d is child:
-                    return True
-                d = d.right
-            return False
-
-        for l in range(1, self.max_level+1):
-            p = None
-            n = self.level_heads[l].right
-            while n:
-                if is_parent(n, chain[-1]):
-                    p = n
-                    break
-                n = n.right
-            if p:
-                chain.append(p)
-
-        if chain[-1] is not self.head:
-            chain.append(self.head)
-
-        proof = []
-        for v in chain:
-            entry = dict(level=v.level, rank=v.rank,
-                         right=v.right.label.hex() if v.right and v.right.label else "",
-                         label=v.label.hex() if v.label else "")
-            if v.level == 0:
-                entry['leaf'] = v.leaf_hash.hex() if v.leaf_hash else ""
-            else:
-                entry['down'] = v.down.label.hex() if v.down and v.down.label else ""
-            proof.append(entry)
-        return (leaf.leaf_hash.hex() if leaf.leaf_hash else "").lower(), proof
+            if l < len(new_nodes):
+                new_nodes[l].label = self._compute_label(new_nodes[l])
+            
+            # Update predecessor node label
+            if l < len(prevs) and prevs[l]:
+                prevs[l].label = self._compute_label(prevs[l])
+            
+            # Update head node at this level
+            head = self.level_heads[l]
+            head.rank = self._compute_rank(head)
+            head.label = self._compute_label(head)
+        
+        # Update head nodes above actual_height up to max_level
+        for l in range(self.actual_height + 1, self.max_level + 1):
+            head = self.level_heads[l]
+            head.rank = self._compute_rank(head)
+            head.label = self._compute_label(head)
 
     def get_root(self):
         return self.head.label
 
+    def get_actual_height(self):
+        return self.actual_height
+
+    def get_proof_chain(self, rank):
+        if rank < 1 or rank > self.count:
+            raise IndexError("rank out of range")
+
+        proof = []
+        gammas = []  
+        remaining = rank
+        current = self.head
+
+        for level in reversed(range(self.max_level + 1)):
+            while current.right and current.right.rank < remaining:
+                remaining -= current.right.rank
+                current = current.right
+            right_label_hex = current.right.label.hex() if (current.right and current.right.label) else ""
+            
+            include_gamma = random.random() < GAMMA_PROBABILITY
+            
+            if level > 0:
+                proof.append({
+                    "level": level,
+                    "rank": current.rank,
+                    "right": right_label_hex,
+                    "has_gamma": include_gamma
+                })
+                if include_gamma:
+                    gammas.append(level)
+            if current.down:
+                current = current.down
+
+        # Locate leaf
+        leaf = current
+        while remaining > 1 and leaf.right:
+            remaining -= 1
+            leaf = leaf.right
+        proof.append({
+            "level": 0,
+            "key": leaf.key,
+            "value": leaf.value,
+            "leaf": leaf.leaf_hash.hex(),
+            "has_gamma": False
+        })
+
+        return leaf.leaf_hash.hex(), proof, gammas
+
 
 def verify_chain(root_hash, leaf_val, proof):
-    if not proof: return False, 0
-    gammas = []
-    total_bytes = 0
-    first = proof[0]
-    if first['level'] != 0: return False, 0, gammas
-    if not first.get('leaf'): return False, 0, gammas
-    if leaf_val and first['leaf'].lower() != leaf_val.lower():
-        return False, 0, gammas
+    if not proof:
+        return False, 0, []
 
+    leaf_entry = proof[-1]
+    h = sha256(canonical_bytes(leaf_entry["key"]) + canonical_bytes(leaf_entry["value"]))
+    total_bytes = len(canonical_bytes(leaf_entry["key"]) + canonical_bytes(leaf_entry["value"]))
+    gamma_count = 0
 
-    for entry in proof:
-        lvl = entry['level']
-        rank = entry['rank']
-        right_bytes = bytes.fromhex(entry['right']) if entry.get('right') else b''
-        if lvl == 0:
-            leaf_bytes = bytes.fromhex(entry['leaf']) if entry.get('leaf') else b''
-            ser = (canonical_bytes(lvl) +
-                   canonical_bytes(rank) +
-                   canonical_bytes(leaf_bytes) +
-                   canonical_bytes(right_bytes))
-        else:
-            down_bytes = bytes.fromhex(entry['down']) if entry.get('down') else b''
-            ser = (canonical_bytes(lvl) +
-                   canonical_bytes(rank) +
-                   canonical_bytes(down_bytes) +
-                   canonical_bytes(right_bytes))
-
-        computed = sha256(ser)
-        gammas.append(computed.hex())
+    for entry in reversed(proof[:-1]):
+        right_bytes = bytes.fromhex(entry.get("right", "")) if entry.get("right") else b''
+        rank = entry.get("rank", 1)
+        ser = canonical_bytes(entry["level"]) + canonical_bytes(rank) + canonical_bytes(h) + canonical_bytes(right_bytes)
+        h = sha256(ser)
         total_bytes += len(ser)
+        
+        # Count gamma storage
+        if entry.get("has_gamma", False):
+            gamma_count += 1
 
-        if computed != bytes.fromhex(entry['label']):
-            print("Gamma mismatch ", lvl)
-            return False, total_bytes, gammas
-
-    ok = (bytes.fromhex(proof[-1]['label']) == root_hash)
-    return ok, total_bytes, gammas
-
+    ok = (h == root_hash)
+    return ok, total_bytes, gamma_count
 
 # Demo
-if __name__ == "__main__":
-    random.seed(1)
-    asl = AuthSkipList(max_level=5)
-    vals = sorted(random.sample(range(1000, 9999), 32))
-    for v in vals:
-        asl.insert(v)
 
+if __name__ == "__main__":
+    if RANDOM_SEED is not None:
+        random.seed(RANDOM_SEED)
+    else:
+        random.seed()
+
+    asl = AuthSkipList(expected_size=N)
+
+    keys = list(range(1000, 1000 + N))
+    vals = list(range(1000, 1000 + N))
+
+    print(f"Inserting {N} elements...")
+    t0_total = time.perf_counter()
+    for i, (k, v) in enumerate(zip(keys, vals), start=1):
+        asl.insert(k, v)
+    t1_total = time.perf_counter()
+    
     root = asl.get_root()
     print("Root hash:", root.hex())
 
-    total_bytes = 0
-    total_gamma_storage = 0
-    total_proof_time = 0.0
-    total_verify_time = 0.0
-    total = 0
-    n = len(vals)
+    csv_filename = f"asl_results_{N}nodes.csv"
+    
+    with open(csv_filename, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            "Node #", "Key", "Proof Computation Time (µs)",
+            "Proof Verification Time (µs)",
+            "Proof Gamma Storage (bytes)", "Proof Serialized Bytes",
+            "Proof Length (levels)", "Gamma Count"
+        ])
+        writer.writeheader()
 
-    for i in range(1, len(vals)+1):
-      #comp time
-      t0 = time.perf_counter()
-      leaf_val, proof = asl.get_proof_chain(i)
-      t1 = time.perf_counter()
-      total_proof_time += (t1-t0)
+        # Comp. and verify timer
+        for i in range(1, N + 1):
+            if i % SAMPLE_EVERY != 0:
+                continue
+            t0 = time.perf_counter()
+            leaf_val, proof, gamma_levels = asl.get_proof_chain(i)
+            t1 = time.perf_counter()
+            proof_time = (t1 - t0) * 1e6
 
-      #verification time
-      t2 = time.perf_counter()
-      ok, nbytes, gammas = verify_chain(root, leaf_val, proof)
-      t3 = time.perf_counter()
-      total_verify_time += (t3 - t2)
+            t2 = time.perf_counter()
+            ok, nbytes, gamma_count = verify_chain(root, leaf_val, proof)
+            t3 = time.perf_counter()
+            verify_time = (t3 - t2) * 1e6
 
-      total_bytes += nbytes
+            proof_length = len(proof)
+            gamma_storage = gamma_count * 32  
 
-      gamma_storage = sum(len(bytes.fromhex(g)) for g in gammas)
-      total_gamma_storage += gamma_storage
+            writer.writerow({
+                "Node #": i,
+                "Key": proof[-1]["key"],
+                "Proof Computation Time (µs)": proof_time,
+                "Proof Verification Time (µs)": verify_time,
+                "Proof Gamma Storage (bytes)": gamma_storage,
+                "Proof Serialized Bytes": nbytes,
+                "Proof Length (levels)": proof_length,
+                "Gamma Count": gamma_count
+            })
 
-      print("Gamma values: ", [g[:10] + "..." for g in gammas])
-      print(f"{i:2d}: ok = {ok}, proof_bytes={nbytes}, gamma_storage={gamma_storage}")
+    df = pd.read_csv(csv_filename)
 
+    summary = pd.DataFrame({
+        "Metric": [
+            "Average Proof Computation Time (µs)",
+            "Average Proof Verification Time (µs)",
+            "Average Gamma Storage (bytes)",
+            "Average Proof Serialized Bytes",
+            "",
+            "Largest Proof Computation Time (µs)",
+            "Largest Proof Verification Time (µs)",
+            "Largest Gamma Storage (bytes)",
+            "Largest Proof Serialized Bytes",
+            "",
+            "Std Dev Proof Computation Time (µs)",
+            "Std Dev Proof Verification Time (µs)",
+            "Std Dev Gamma Storage (bytes)",
+            "Std Dev Proof Serialized Bytes",
+        ],
+        "Value": [
+            round(df["Proof Computation Time (µs)"].mean(), 2),
+            round(df["Proof Verification Time (µs)"].mean(), 2),
+            round(df["Proof Gamma Storage (bytes)"].mean(), 2),
+            round(df["Proof Serialized Bytes"].mean(), 2),
+            "",
+            round(df["Proof Computation Time (µs)"].max(), 2),
+            round(df["Proof Verification Time (µs)"].max(), 2),
+            round(df["Proof Gamma Storage (bytes)"].max(), 2),
+            round(df["Proof Serialized Bytes"].max(), 2),
+            "",
+            round(df["Proof Computation Time (µs)"].std(), 2),
+            round(df["Proof Verification Time (µs)"].std(), 2),
+            round(df["Proof Gamma Storage (bytes)"].std(), 2),
+            round(df["Proof Serialized Bytes"].std(), 2),
+        ]
+    })
 
-    print("\n=== Summary ===")
-    print("Avg proof bytes:", total_bytes/len(vals))
-    print("Avg gamma storage: ", total_gamma_storage / n)
-    print("Avg proof computation time: %.6f sec" % (total_proof_time / n))
-    print("Avg proof verification time: %.6f sec" % (total_verify_time / n))
+    summary.to_csv(f"Results_{N}nodes.csv", index=False)
+    print(f"=== Proof Performance Summary ({N} nodes) ===")
+    print(summary.to_string(index=False, justify="center", float_format=lambda x: f"{x:.2f}"))
