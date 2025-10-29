@@ -251,7 +251,6 @@ if __name__ == "__main__":
         random.seed()
 
     asl = AuthSkipList(expected_size=N)
-    print(f"Calculated max_level: {asl.max_level}")
 
     keys = list(range(1000, 1000 + N))
     vals = list(range(1000, 1000 + N))
@@ -261,15 +260,12 @@ if __name__ == "__main__":
     for i, (k, v) in enumerate(zip(keys, vals), start=1):
         asl.insert(k, v)
     t1_total = time.perf_counter()
-    print(f"Insertion + recompute done in {(t1_total - t0_total):.2f} sec")
-    print(f"Actual skip list height: {asl.get_actual_height()}")
-
+    
     root = asl.get_root()
     print("Root hash:", root.hex())
 
-    csv_filename = f"asl_results_{N}nodes_probgamma.csv"
-    print(f"Sampling every {SAMPLE_EVERY}th proof and writing to {csv_filename}...")
-
+    csv_filename = f"asl_results_{N}nodes.csv"
+    
     with open(csv_filename, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=[
             "Node #", "Key", "Proof Computation Time (µs)",
@@ -307,7 +303,6 @@ if __name__ == "__main__":
                 "Gamma Count": gamma_count
             })
 
-    print("Sampling complete. Summary with pandas...")
     df = pd.read_csv(csv_filename)
 
     summary = pd.DataFrame({
