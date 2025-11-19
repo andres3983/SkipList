@@ -15,7 +15,7 @@ args = parser.parse_args()
 N = args.size
 
 # Configs
-BATCH_RECOMPUTE = 512
+""" BATCH_RECOMPUTE = 512 - Not currently used """
 SAMPLE_EVERY = 10
 RANDOM_SEED = None
 GAMMA_PROBABILITY = 0.5  # Probability of including gamma at each level
