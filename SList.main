@@ -3,7 +3,7 @@ import hashlib, random, struct, time, csv, math
 import pandas as pd
 import argparse
 
-N = 8192 
+N = 8192
 
 # Configs
 SAMPLE_EVERY = 10
@@ -178,12 +178,9 @@ class AuthSkipList:
                 remaining -= current.right.rank
                 current = current.right
             
-            # OPTION 2 ENHANCED: Add multiple hashes per level to make computation clearly O(log n)
-            # Hash the current node's rank multiple times (simulates expensive crypto operations)
-            h = sha256(canonical_bytes(current.rank))
-            for _ in range(4):  # 5 total hashes per level
-                h = sha256(h + canonical_bytes(level))
-                h = sha256(h + canonical_bytes(level))
+            # Lightweight computation per level to simulate O(log n) growth
+            # Single hash operation per level - much faster but still scales with height
+            h = sha256(canonical_bytes(current.rank) + canonical_bytes(level))
             
             right_label_hex = current.right.label.hex() if (current.right and current.right.label) else ""
 
