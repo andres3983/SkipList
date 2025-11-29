@@ -9,15 +9,15 @@ plt.rcParams['figure.figsize'] = (16, 10)
 plt.rcParams['font.size'] = 11
 
 data = {
-    'nodes': [2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576],
-    'avg_proof_computation_us': [15.2, 18.9, 21.8, 26.3, 29.1, 35.2, 39.8, 46.3, 52.1, 58.7],
-    'avg_proof_verification_us': [28.5, 32.7, 36.2, 41.8, 45.3, 51.9, 57.2, 64.8, 71.3, 78.1],
-    'avg_gamma_storage_bytes': [178.3, 195.7, 209.1, 226.4, 243.2, 258.9, 274.6, 290.1, 307.5, 322.8],
-    'avg_proof_serialized_bytes': [895.2, 1025.8, 1142.3, 1288.9, 1405.2, 1558.7, 1663.4, 1812.5, 1921.8, 2078.3],
-    'std_proof_computation_us': [2.3, 1.8, 3.2, 2.9, 4.1, 3.8, 5.2, 6.1, 5.8, 7.5],
-    'std_proof_verification_us': [1.9, 2.5, 2.3, 3.4, 3.1, 4.5, 4.2, 5.8, 6.3, 6.8],
-    'std_gamma_storage_bytes': [54.2, 56.8, 61.3, 68.9, 74.2, 79.8, 86.5, 92.1, 98.7, 105.3],
-    'std_proof_serialized_bytes': [42.3, 58.9, 51.2, 73.8, 82.1, 95.3, 88.7, 118.4, 121.9, 142.6]
+    'nodes': [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576],
+    'avg_proof_computation_us': [17.14, 18.88, 21.31, 22.68, 23.45, 24.82, 25.91, 26.73, 27.89, 28.52, 29.67],
+    'avg_proof_verification_us': [33.32, 34.73, 38.45, 41.79, 44.12, 46.98, 49.35, 52.84, 55.27, 58.96, 61.43],
+    'avg_gamma_storage_bytes': [156.24, 178.04, 191.77, 208.45, 224.33, 238.17, 254.92, 269.48, 286.71, 301.85, 318.24],
+    'avg_proof_serialized_bytes': [600.07, 685.42, 828.74, 869.96, 912.48, 957.83, 1001.27, 1048.95, 1093.64, 1142.18, 1187.92],
+    'std_proof_computation_us': [1.97, 2.07, 2.64, 3.81, 2.15, 1.89, 2.47, 1.92, 2.68, 1.84, 2.93],
+    'std_proof_verification_us': [9.72, 3.11, 3.03, 2.46, 3.84, 2.97, 4.21, 2.68, 3.52, 4.18, 3.76],
+    'std_gamma_storage_bytes': [50.40, 52.20, 54.35, 59.27, 57.18, 60.84, 62.47, 65.93, 67.28, 70.15, 71.62],
+    'std_proof_serialized_bytes': [50.64, 165.04, 54.40, 59.30, 65.82, 71.48, 77.35, 83.91, 90.27, 96.84, 103.56] 
 }
 
 df = pd.DataFrame(data)
@@ -79,6 +79,3 @@ for i, (val, std) in enumerate(zip(df['avg_proof_serialized_bytes'], df['std_pro
 plt.tight_layout()
 plt.savefig('skiplist_performance.png', dpi=300, bbox_inches='tight')
 plt.show()
-
-print("✓ Visualization saved as 'skiplist_performance.png'")
-print(f"✓ Analyzed {len(df)} benchmark results from {df['nodes'].min():,} to {df['nodes'].max():,} nodes")
