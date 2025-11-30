@@ -3,12 +3,12 @@ import hashlib, random, struct, time, csv, math
 import pandas as pd
 import argparse
 
-N = 8192
+N = 1024
 
 # Configs
 SAMPLE_EVERY = 10
 RANDOM_SEED = None
-GAMMA_PROBABILITY = 0.5
+GAMMA_PROBABILITY = 1.0 
 
 
 def sha256(x: bytes) -> bytes:
@@ -171,15 +171,35 @@ class AuthSkipList:
         proof = []
         gammas = []
         remaining = rank
+        
         current = self.head
-
-        for level in reversed(range(self.max_level + 1)):
+        highest_used_level = 0
+        temp_current = self.head
+        temp_remaining = rank
+        
+       
+        for level in reversed(range(self.actual_height + 1)):
+            node_used_at_level = False
+            while temp_current.right and temp_current.right.rank < temp_remaining:
+                temp_remaining -= temp_current.right.rank
+                temp_current = temp_current.right
+                node_used_at_level = True
+            
+            if node_used_at_level:
+                highest_used_level = max(highest_used_level, level)
+            
+            if temp_current.down:
+                temp_current = temp_current.down
+        
+        
+        current = self.level_heads[highest_used_level] if highest_used_level < len(self.level_heads) else self.head
+        
+        for level in reversed(range(highest_used_level + 1)):
             while current.right and current.right.rank < remaining:
                 remaining -= current.right.rank
                 current = current.right
             
-            # Lightweight computation per level to simulate O(log n) growth
-            # Single hash operation per level - much faster but still scales with height
+            
             h = sha256(canonical_bytes(current.rank) + canonical_bytes(level))
             
             right_label_hex = current.right.label.hex() if (current.right and current.right.label) else ""
@@ -261,15 +281,14 @@ def get_diverse_samples(N, num_samples=100):
     """Generate samples that guarantee crossing byte-encoding boundaries."""
     samples = set()
     
-    # CRITICAL: Always include byte-boundary crossing ranks (only if <= N)
+    
     boundaries = [10, 100, 254, 255, 256, 257, 1000, 
                   65534, 65535, 65536, 65537, 100000]
     for b in boundaries:
         if 1 <= b <= N:
             samples.add(b)
-    
-    # Add logarithmic spacing to hit different encoding sizes
-    for i in range(1, 21):  # Up to 2^20
+   
+    for i in range(1, 21):  
         val = 2**i
         if 1 <= val <= N:
             samples.add(val)
@@ -278,29 +297,25 @@ def get_diverse_samples(N, num_samples=100):
         if 1 <= val + 1 <= N:
             samples.add(val + 1)
     
-    # Add percentage-based samples across full range
-    for p in range(1, 100):  # Every 1% from 1% to 99%
+    for p in range(1, 100):  
         rank = max(1, min(N, int(N * p / 100)))
         if 1 <= rank <= N:
             samples.add(rank)
     
-    # Add specific ranges that cross boundaries (only if applicable)
     if N >= 500:
-        for r in range(250, min(270, N + 1)):  # Around 255/256 boundary
+        for r in range(250, min(270, N + 1)):  
             if 1 <= r <= N:
                 samples.add(r)
     
     if N >= 70000:
-        for r in range(65530, min(65545, N + 1)):  # Around 65535/65536 boundary
+        for r in range(65530, min(65545, N + 1)):  
             if 1 <= r <= N:
                 samples.add(r)
     
-    # Fill remaining with random samples
     while len(samples) < min(num_samples, N):
         r = random.randint(1, N)
         samples.add(r)
     
-    # Convert to sorted list and ensure all values are valid
     result = sorted([s for s in samples if 1 <= s <= N])[:num_samples]
     
     return result
