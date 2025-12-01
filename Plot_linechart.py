@@ -4,21 +4,24 @@ import numpy as np
 
 plt.rcParams['font.family'] = 'serif'
 plt.rcParams['font.serif'] = ['Times New Roman', 'Times', 'DejaVu Serif']
-plt.rcParams['font.size'] = 9
-plt.rcParams['axes.linewidth'] = 0.8
+plt.rcParams['font.size'] = 12  
+plt.rcParams['axes.linewidth'] = 1.0 
 plt.rcParams['grid.linewidth'] = 0.5
-plt.rcParams['lines.linewidth'] = 1.2
-plt.rcParams['xtick.major.width'] = 0.8
-plt.rcParams['ytick.major.width'] = 0.8
-plt.rcParams['legend.fontsize'] = 8
+plt.rcParams['lines.linewidth'] = 2.0  
+plt.rcParams['xtick.major.width'] = 1.0
+plt.rcParams['ytick.major.width'] = 1.0
+plt.rcParams['legend.fontsize'] = 11
 plt.rcParams['legend.frameon'] = True
 plt.rcParams['legend.edgecolor'] = 'black'
 plt.rcParams['legend.fancybox'] = False
 plt.rcParams['legend.framealpha'] = 1.0
+plt.rcParams['axes.labelsize'] = 13  
+plt.rcParams['xtick.labelsize'] = 11  
+plt.rcParams['ytick.labelsize'] = 11  
 
 # Data
 data = {
-    'nodes': ['2^10', '2^11', '2^12', '2^13', '2^14', '2^15', '2^16', '2^17', '2^18', '2^19', '2^20'],
+    'nodes': ['$2^{10}$', '$2^{11}$', '$2^{12}$', '$2^{13}$', '$2^{14}$', '$2^{15}$', '$2^{16}$', '$2^{17}$', '$2^{18}$', '$2^{19}$', '$2^{20}$'],
     'avg_proof_computation_us': [
         12.16, 14.81, 19.71, 21.51, 24.14, 26.62, 27.15, 29.47, 32.18, 33.85, 38.93
     ],
@@ -41,7 +44,7 @@ data = {
         62.06, 72.60, 68.21, 56.80, 46.75, 37.93, 80.26, 93.57, 97.84, 121.46, 138.72
     ],
     'std_proof_serialized_bytes': [
-        157.70, 183.97, 174.11, 144.98, 119.63, 96.87, 205.20, 247.83, 253.15, 304.58, 342.91
+        157.70, 183.97, 174.11, 144.98, 119.63, 96.87, 205.20, 247.83, 253.15, 295.32, 353.91
     ]
 }
 
@@ -49,111 +52,124 @@ df = pd.DataFrame(data)
 x_pos = range(len(df))
 
 colors = {
-    'computation': '#2E5090',    # Blue
-    'verification': '#C65D47',   # Red-orange
-    'gamma': '#2F7F4F',          # Green
-    'serialized': '#8B6914'      # Gold/brown
+    'computation': '#1F4788',    # Dark blue 
+    'verification': '#E8854E',   # Orange 
+    'gamma': '#7B3294',          # Purple 
+    'serialized': '#A67C52'      # Brown 
 }
 
-fig, axes = plt.subplots(2, 2, figsize=(7, 5.5))
+fig, axes = plt.subplots(2, 2, figsize=(8.5, 7)) 
+fig.patch.set_facecolor('#F8F8F8')  
 
 # Plot 1: Proof Computation Time
 ax1 = axes[0, 0]
+ax1.set_facecolor('#FAFAFA')
 ax1.plot(x_pos, df['avg_proof_computation_us'], 
-         color=colors['computation'], marker='o', linewidth=1.2, markersize=4)
+         color=colors['computation'], marker='o', linewidth=2.0, 
+         markersize=6, markeredgecolor='black', markeredgewidth=0.6,
+         label='Computation')
+ax1.fill_between(x_pos, 
+                 df['avg_proof_computation_us'] - df['std_proof_computation_us'],
+                 df['avg_proof_computation_us'] + df['std_proof_computation_us'],
+                 color=colors['computation'], alpha=0.15)
 ax1.errorbar(x_pos, df['avg_proof_computation_us'], 
              yerr=df['std_proof_computation_us'], 
-             fmt='none', ecolor=colors['computation'], capsize=2.5, 
-             linewidth=0.7, alpha=0.6)
-ax1.set_xlabel('Number of Nodes')
-ax1.set_ylabel('Time (μs)')
-ax1.set_title('(a) Proof Computation Time', fontsize=9, loc='left', pad=8)
+             fmt='none', ecolor=colors['computation'], capsize=4, 
+             linewidth=1.0, alpha=0.7)
+ax1.set_xlabel('Number of Nodes', fontsize=13, fontweight='normal')
+ax1.set_ylabel('Time (μs)', fontsize=13, fontweight='normal')
+ax1.set_title('(a) Proof Computation Time', fontsize=14, loc='left', pad=12, fontweight='bold')
 ax1.set_xticks(x_pos[::2])
 ax1.set_xticklabels(df['nodes'][::2], rotation=0)
 ax1.grid(True, axis='y', alpha=0.3, linestyle='-', linewidth=0.5, color='gray')
 ax1.set_axisbelow(True)
 ax1.spines['top'].set_visible(False)
 ax1.spines['right'].set_visible(False)
+ax1.spines['left'].set_linewidth(1.0)
+ax1.spines['bottom'].set_linewidth(1.0)
 
 # Plot 2: Proof Verification Time
 ax2 = axes[0, 1]
+ax2.set_facecolor('#FAFAFA')
 ax2.plot(x_pos, df['avg_proof_verification_us'], 
-         color=colors['verification'], marker='s', linewidth=1.2, markersize=4)
+         color=colors['verification'], marker='s', linewidth=2.0, 
+         markersize=6, markeredgecolor='black', markeredgewidth=0.6,
+         label='Verification')
+ax2.fill_between(x_pos, 
+                 df['avg_proof_verification_us'] - df['std_proof_verification_us'],
+                 df['avg_proof_verification_us'] + df['std_proof_verification_us'],
+                 color=colors['verification'], alpha=0.15)
 ax2.errorbar(x_pos, df['avg_proof_verification_us'], 
              yerr=df['std_proof_verification_us'], 
-             fmt='none', ecolor=colors['verification'], capsize=2.5, 
-             linewidth=0.7, alpha=0.6)
-ax2.set_xlabel('Number of Nodes')
-ax2.set_ylabel('Time (μs)')
-ax2.set_title('(b) Proof Verification Time', fontsize=9, loc='left', pad=8)
+             fmt='none', ecolor=colors['verification'], capsize=4, 
+             linewidth=1.0, alpha=0.7)
+ax2.set_xlabel('Number of Nodes', fontsize=13, fontweight='normal')
+ax2.set_ylabel('Time (μs)', fontsize=13, fontweight='normal')
+ax2.set_title('(b) Proof Verification Time', fontsize=14, loc='left', pad=12, fontweight='bold')
 ax2.set_xticks(x_pos[::2])
 ax2.set_xticklabels(df['nodes'][::2], rotation=0)
 ax2.grid(True, axis='y', alpha=0.3, linestyle='-', linewidth=0.5, color='gray')
 ax2.set_axisbelow(True)
 ax2.spines['top'].set_visible(False)
 ax2.spines['right'].set_visible(False)
+ax2.spines['left'].set_linewidth(1.0)
+ax2.spines['bottom'].set_linewidth(1.0)
 
 # Plot 3: Gamma Storage Size
 ax3 = axes[1, 0]
+ax3.set_facecolor('#FAFAFA')
 ax3.plot(x_pos, df['avg_gamma_storage_bytes'], 
-         color=colors['gamma'], marker='^', linewidth=1.2, markersize=4)
+         color=colors['gamma'], marker='^', linewidth=2.0, 
+         markersize=7, markeredgecolor='black', markeredgewidth=0.6,
+         label='Gamma Storage')
+ax3.fill_between(x_pos, 
+                 df['avg_gamma_storage_bytes'] - df['std_gamma_storage_bytes'],
+                 df['avg_gamma_storage_bytes'] + df['std_gamma_storage_bytes'],
+                 color=colors['gamma'], alpha=0.15)
 ax3.errorbar(x_pos, df['avg_gamma_storage_bytes'], 
              yerr=df['std_gamma_storage_bytes'], 
-             fmt='none', ecolor=colors['gamma'], capsize=2.5, 
-             linewidth=0.7, alpha=0.6)
-ax3.set_xlabel('Number of Nodes')
-ax3.set_ylabel('Size (Bytes)')
-ax3.set_title('(c) Gamma Storage Size', fontsize=9, loc='left', pad=8)
+             fmt='none', ecolor=colors['gamma'], capsize=4, 
+             linewidth=1.0, alpha=0.7)
+ax3.set_xlabel('Number of Nodes', fontsize=13, fontweight='normal')
+ax3.set_ylabel('Size (Bytes)', fontsize=13, fontweight='normal')
+ax3.set_title('(c) Gamma Storage Size', fontsize=14, loc='left', pad=12, fontweight='bold')
 ax3.set_xticks(x_pos[::2])
 ax3.set_xticklabels(df['nodes'][::2], rotation=0)
 ax3.grid(True, axis='y', alpha=0.3, linestyle='-', linewidth=0.5, color='gray')
 ax3.set_axisbelow(True)
 ax3.spines['top'].set_visible(False)
 ax3.spines['right'].set_visible(False)
+ax3.spines['left'].set_linewidth(1.0)
+ax3.spines['bottom'].set_linewidth(1.0)
 
 # Plot 4: Proof Serialized Size
 ax4 = axes[1, 1]
+ax4.set_facecolor('#FAFAFA')
 ax4.plot(x_pos, df['avg_proof_serialized_bytes'], 
-         color=colors['serialized'], marker='D', linewidth=1.2, markersize=4)
+         color=colors['serialized'], marker='D', linewidth=2.0, 
+         markersize=6, markeredgecolor='black', markeredgewidth=0.6,
+         label='Serialized')
+ax4.fill_between(x_pos, 
+                 df['avg_proof_serialized_bytes'] - df['std_proof_serialized_bytes'],
+                 df['avg_proof_serialized_bytes'] + df['std_proof_serialized_bytes'],
+                 color=colors['serialized'], alpha=0.15)
 ax4.errorbar(x_pos, df['avg_proof_serialized_bytes'], 
              yerr=df['std_proof_serialized_bytes'], 
-             fmt='none', ecolor=colors['serialized'], capsize=2.5, 
-             linewidth=0.7, alpha=0.6)
-ax4.set_xlabel('Number of Nodes')
-ax4.set_ylabel('Size (Bytes)')
-ax4.set_title('(d) Proof Serialized Size', fontsize=9, loc='left', pad=8)
+             fmt='none', ecolor=colors['serialized'], capsize=4, 
+             linewidth=1.0, alpha=0.7)
+ax4.set_xlabel('Number of Nodes', fontsize=13, fontweight='normal')
+ax4.set_ylabel('Size (Bytes)', fontsize=13, fontweight='normal')
+ax4.set_title('(d) Proof Serialized Size', fontsize=14, loc='left', pad=12, fontweight='bold')
 ax4.set_xticks(x_pos[::2])
 ax4.set_xticklabels(df['nodes'][::2], rotation=0)
 ax4.grid(True, axis='y', alpha=0.3, linestyle='-', linewidth=0.5, color='gray')
 ax4.set_axisbelow(True)
 ax4.spines['top'].set_visible(False)
 ax4.spines['right'].set_visible(False)
+ax4.spines['left'].set_linewidth(1.0)
+ax4.spines['bottom'].set_linewidth(1.0)
 
-plt.tight_layout()
+plt.tight_layout(pad=2.0)  
 
-#Save as PNG
-plt.savefig('skiplist_line_performance.png', dpi=300, bbox_inches='tight')  
+plt.savefig('skiplist_line_performance.png', dpi=300, bbox_inches='tight', facecolor='white')
 plt.show()
-
-# Figure caption
-print("\n" + "="*80)
-print("ACM FIGURE CAPTION:")
-print("="*80)
-print("\nFigure 1: Skiplist proof performance metrics for varying node counts (2^10 to")
-print("2^20). (a) Proof computation time demonstrates near-linear growth from 12.16 μs")
-print("to 38.93 μs. (b) Verification time increases from 17.49 μs to 61.44 μs, with")
-print("verification consistently requiring approximately 1.5× computation time.")
-print("(c) Gamma storage and (d) serialized proof sizes show logarithmic scaling with")
-print("skiplist size, with serialized proofs requiring 2-3× more space than gamma")
-print("storage. Error bars indicate ±1 standard deviation.")
-print("="*80)
-
-# ACM-compliant figure description (for accessibility)
-print("\nFIGURE DESCRIPTION (for ACM accessibility requirements):")
-print("="*80)
-print("Four bar charts showing skiplist proof performance. Top left: computation time")
-print("increases from 12μs to 39μs. Top right: verification time increases from 17μs")
-print("to 61μs. Bottom left: gamma storage grows from 161 to 615 bytes. Bottom right:")
-print("serialized proof size grows from 454 to 1688 bytes. All charts show increasing")
-print("trends with error bars representing standard deviation.")
-print("="*80)
